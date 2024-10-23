@@ -30,12 +30,14 @@ def get_price():
 #print("Expected to trade at ",get_price())
 
 points=[]
-for i in range(0,10):
-    price=get_price()
-    points.append(price)
-print(points)
+# for i in range(0,10):
+#     price=get_price()
+#     points.append(price)
+# print(points)
 
 while datetime.datetime.now() != "1650":
+    price=get_price()
+    points.append(price)
     df=pd.DataFrame(points,columns=["price"])
     df['EMA'] = df['price'].ewm(span=10, adjust=False).mean()
     df['signal'] = 0
@@ -43,6 +45,10 @@ while datetime.datetime.now() != "1650":
     df.loc[df['price'] < df['EMA'], 'signal'] = -1  # Sell signal
     time.sleep(1)
     print("signal",df["signal"])
+    if df["signal"].all() == 1:
+        print("Buy")
+    else:
+        print("sell")
    
 
 
