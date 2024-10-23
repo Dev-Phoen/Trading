@@ -1,0 +1,146 @@
+import pandas as pd
+import numpy as np
+import time
+import random
+
+class TestTrader:
+    def __init__(self, initial_price=0.86, portfolio_gbp=1000000):
+        self.portfolio_gbp = portfolio_gbp
+        self.portfolio_eur = 0
+        self.current_price = initial_price
+        self.prices = []
+        self.trades = []
+        self.period = 0  # 0: EMA, 1: RSI, 2: EMA
+        self.periods_elapsed = 0
+        self.total_periods = 60  # Simulate 60 periods
+        
+    def simulate_price(self):
+        """Simulate price movements"""
+        if self.period == 1:  # Brexit period - more volatile
+            change = random.uniform(-0.05, 0.05)  # 5% max change
+        else:
+            change = random.uniform(-0.02, 0.02)  # 2% max change
+            
+        self.current_price *= (1 + change)
+        self.prices.append(self.current_price)
+        return self.current_price
+
+    def calculate_ema(self):
+        """Calculate EMA signals"""
+        if len(self.prices) < 10:
+            return 0
+            
+        df = pd.DataFrame(self.prices, columns=['price'])
+        df['EMA'] = df['price'].ewm(span=10, adjust=False).mean()
+        
+        if df['price'].iloc[-1] > df['EMA'].iloc[-1]:
+            return 1  # Buy signal
+        elif df['price'].iloc[-1] < df['EMA'].iloc[-1]:
+            return -1  # Sell signal
+        return 0
+
+    def calculate_rsi(self):
+        """Calculate RSI signals"""
+        if len(self.prices) < 14:
+            return 0
+            
+        df = pd.DataFrame(self.prices, columns=['price'])
+        delta = df['price'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['RSI'] = 100 - (100 / (1 + rs))
+        
+        if df['RSI'].iloc[-1] < 30:
+            return 1  # Buy signal
+        elif df['RSI'].iloc[-1] > 70:
+            return -1  # Sell signal
+        return 0
+
+    def execute_trade(self, side, quantity):
+        """Simulate trade execution"""
+        if side == "Buy":
+            cost = quantity * self.current_price
+            if cost <= self.portfolio_gbp:
+                self.portfolio_gbp -= cost
+                self.portfolio_eur += quantity
+                self.trades.append({
+                    'period': self.periods_elapsed,
+                    'strategy': 'RSI' if self.period == 1 else 'EMA',
+                    'side': side,
+                    'quantity': quantity,
+                    'price': self.current_price,
+                    'cost': cost
+                })
+                return True
+        else:  # Sell
+            if quantity <= self.portfolio_eur:
+                proceeds = quantity * self.current_price
+                self.portfolio_gbp += proceeds
+                self.portfolio_eur -= quantity
+                self.trades.append({
+                    'period': self.periods_elapsed,
+                    'strategy': 'RSI' if self.period == 1 else 'EMA',
+                    'side': side,
+                    'quantity': quantity,
+                    'price': self.current_price,
+                    'proceeds': proceeds
+                })
+                return True
+        return False
+
+    def get_total_value_gbp(self):
+        """Calculate total portfolio value in GBP"""
+        return self.portfolio_gbp + (self.portfolio_eur * self.current_price)
+
+    def run_simulation(self):
+        """Run the complete trading simulation"""
+        print("Starting simulation...")
+        print(f"Initial portfolio: {self.portfolio_gbp} GBP")
+        
+        while self.periods_elapsed < self.total_periods:
+            # Update price
+            price = self.simulate_price()
+            
+            # Determine period
+            if self.periods_elapsed < 20:  # First 20 periods: EMA
+                self.period = 0
+                signal = self.calculate_ema()
+                strategy = "EMA"
+            elif self.periods_elapsed < 40:  # Next 20 periods: RSI
+                self.period = 1
+                signal = self.calculate_rsi()
+                strategy = "RSI"
+            else:  # Last 20 periods: EMA
+                self.period = 2
+                signal = self.calculate_ema()
+                strategy = "EMA"
+            
+            # Execute trades based on signals
+            trade_size = 100000  # Standard trade size
+            if signal == 1:
+                success = self.execute_trade("Buy", trade_size)
+                if success:
+                    print(f"Period {self.periods_elapsed}: {strategy} BUY {trade_size} @ {price:.4f}")
+            elif signal == -1:
+                success = self.execute_trade("Sell", trade_size)
+                if success:
+                    print(f"Period {self.periods_elapsed}: {strategy} SELL {trade_size} @ {price:.4f}")
+            
+            self.periods_elapsed += 1
+            time.sleep(0.1)  # Small delay to make output readable
+            
+        # Print final results
+        final_value = self.get_total_value_gbp()
+        profit_loss = final_value - 1000000
+        print("\nSimulation Complete!")
+        print(f"Final Portfolio Value: {final_value:.2f} GBP")
+        print(f"Profit/Loss: {profit_loss:.2f} GBP ({(profit_loss/1000000)*100:.2f}%)")
+        print(f"Final EUR Position: {self.portfolio_eur:.2f} EUR")
+        print(f"Final GBP Position: {self.portfolio_gbp:.2f} GBP")
+        print(f"\nTotal Trades: {len(self.trades)}")
+
+# Run the simulation
+if __name__ == "__main__":
+    trader = TestTrader()
+    trader.run_simulation()
