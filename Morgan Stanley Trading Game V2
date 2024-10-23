@@ -2,137 +2,78 @@ import requests
 import json
 import datetime
 import pandas as pd
-import numpy as np
 import time
 
-# Configuration
-url = "http://fx-trading-game-leicester-challenge.westeurope.azurecontainer.io:443/"
-Trader_ID = "gKNKsiQiRXKscOjz7DP54PSKN7bqJ4Yj"
-portfolio = 1000000
+url="http://fx-trading-game-leicester-challenge.westeurope.azurecontainer.io:443/"
+Trader_ID="gKNKsiQiRXKscOjz7DP54PSKN7bqJ4Yj"
+portfolio=1000000
+brexit="16:50"
+Market_Open="16:30"
+Bounce="17:10"
+close="17:30"
 
-# Time periods
-MARKET_OPEN = datetime.datetime.strptime("16:30", "%H:%M").time()
-BREXIT = datetime.datetime.strptime("16:50", "%H:%M").time()
-BOUNCE = datetime.datetime.strptime("17:10", "%H:%M").time()
-MARKET_CLOSE = datetime.datetime.strptime("17:30", "%H:%M").time()
+
+
+
+
 
 def get_price():
-    """Get current EURGBP price"""
     api_url = url + "/price/EURGBP"
     res = requests.get(api_url)
     if res.status_code == 200:
-        price = json.loads(res.content.decode('utf-8'))["price"]
-        print("price-->", price)
-        return float(price)
+        price=json.loads(res.content.decode('utf-8'))["price"]
+        print("price-->",price)
+
+        return price
     return None
 
+#print("Expected to trade at ",get_price())
+
+points=[]
+# for i in range(0,10):
+#     price=get_price()
+#     points.append(price)
+# print(points)
+
+while datetime.datetime.now() != "16:50":
+    price=get_price()
+    points.append(price)
+    print(price)
+    df=pd.DataFrame(points,columns=["price"])
+    df['EMA'] = df['price'].ewm(span=10, adjust=False).mean()
+    df['signal'] = 0
+    df.loc[df['price'] > df['EMA'], 'signal'] = 1  # Buy signal
+    df.loc[df['price'] < df['EMA'], 'signal'] = -1  # Sell signal
+    time.sleep(0.5)
+    print("signal-->",df["signal"])
+    if df["signal"].all() == 1:
+        print("Buy")
+    else:
+        print("sell")
+   
+
+
+# if all(points[i] <= points[i + 1] for i in range(len(points) - 1)):
+#     print("buy")
+#     print(all(points[i] <= points[i + 1] for i in range(len(points) - 1)))
+# else:
+#     print(all(points[i] <= points[i + 1] for i in range(len(points) - 1)))
+#     print("no")
+
+
+
+previous=[get_price()]
+print("Previous-->",previous)
+
+
+
+
 def trade(trader_id, qty, side):
-    """Execute trade"""
     api_url = url + "/trade/EURGBP"
     data = {"trader_id": trader_id, "quantity": qty, "side": side}
     res = requests.post(api_url, json=data)
     if res.status_code == 200:
         resp_json = json.loads(res.content.decode('utf-8'))
         if resp_json["success"]:
-            return float(resp_json["price"])
+            return resp_json["price"]
     return None
-
-def calculate_rsi(prices, periods=14):
-    """Calculate RSI"""
-    delta = pd.Series(prices).diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=periods).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=periods).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-def ema_strategy(prices_df):
-    """Generate signals based on EMA"""
-    df = prices_df.copy()
-    df['EMA'] = df['price'].ewm(span=10, adjust=False).mean()
-    df['signal'] = 0
-    df.loc[df['price'] > df['EMA'], 'signal'] = 1  # Buy signal
-    df.loc[df['price'] < df['EMA'], 'signal'] = -1  # Sell signal
-    return df['signal'].iloc[-1]
-
-def rsi_strategy(prices_df, overbought=70, oversold=30):
-    """Generate signals based on RSI"""
-    df = prices_df.copy()
-    df['RSI'] = calculate_rsi(df['price'])
-    df['signal'] = 0
-    df.loc[df['RSI'] < oversold, 'signal'] = 1  # Buy signal
-    df.loc[df['RSI'] > overbought, 'signal'] = -1  # Sell signal
-    return df['signal'].iloc[-1]
-
-def main():
-    prices = []
-    trade_size = 100000  # Maximum trade size
-    last_trade_time = datetime.datetime.now()
-    trade_cooldown = datetime.timedelta(seconds=1)  # Minimum time between trades
-    
-    while True:
-        current_time = datetime.datetime.now().time()
-        
-        # Check if market is closed
-        if current_time >= MARKET_CLOSE:
-            print("Market closed")
-            break
-            
-        # Get current price and add to history
-        current_price = get_price()
-        if current_price is None:
-            time.sleep(1)
-            continue
-            
-        prices.append(current_price)
-        df = pd.DataFrame(prices, columns=['price'])
-        
-        # Only trade if enough time has passed since last trade
-        if datetime.datetime.now() - last_trade_time < trade_cooldown:
-            continue
-        
-        # Choose strategy based on time period
-        if MARKET_OPEN <= current_time < BREXIT:
-            # EMA Strategy
-            if len(prices) >= 10:  # Need at least 10 prices for EMA
-                signal = ema_strategy(df)
-                strategy_name = "EMA"
-        
-        elif BREXIT <= current_time < BOUNCE:
-            # RSI Strategy
-            if len(prices) >= 14:  # Need at least 14 prices for RSI
-                signal = rsi_strategy(df)
-                strategy_name = "RSI"
-        
-        elif BOUNCE <= current_time < MARKET_CLOSE:
-            # Back to EMA Strategy
-            if len(prices) >= 10:
-                signal = ema_strategy(df)
-                strategy_name = "EMA"
-        
-        else:
-            continue
-        
-        # Execute trades based on signals
-        if signal == 1:  # Buy signal
-            trade_price = trade(Trader_ID, trade_size, "Buy")
-            if trade_price:
-                print(f"{strategy_name} BUY signal executed at {trade_price}")
-                last_trade_time = datetime.datetime.now()
-        
-        elif signal == -1:  # Sell signal
-            trade_price = trade(Trader_ID, trade_size, "Sell")
-            if trade_price:
-                print(f"{strategy_name} SELL signal executed at {trade_price}")
-                last_trade_time = datetime.datetime.now()
-        
-        # Keep price history to a reasonable size
-        if len(prices) > 100:
-            prices = prices[-100:]
-            
-        time.sleep(1)
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"Error: {e}")
