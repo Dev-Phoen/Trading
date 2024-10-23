@@ -2,9 +2,7 @@ import requests
 import json
 import datetime
 import pandas as pd
-
-
-
+import time
 
 url="http://fx-trading-game-leicester-challenge.westeurope.azurecontainer.io:443/"
 Trader_ID="gKNKsiQiRXKscOjz7DP54PSKN7bqJ4Yj"
@@ -16,37 +14,50 @@ close="17:30"
 
 
 
+
+
+
 def get_price():
     api_url = url + "/price/EURGBP"
     res = requests.get(api_url)
     if res.status_code == 200:
         price=json.loads(res.content.decode('utf-8'))["price"]
-        print(price)
+        print("price-->",price)
 
         return price
     return None
 
-print("Expected to trade at ",get_price())
+#print("Expected to trade at ",get_price())
 
 points=[]
 for i in range(0,10):
     price=get_price()
     points.append(price)
-avg_points=[sum(points)/len(points)]
-print("avg_points-->",avg_points)
+print(points)
+
+while datetime.datetime.now() != "1650":
+    df=pd.DataFrame(points,columns=["price"])
+    df['EMA'] = df['price'].ewm(span=10, adjust=False).mean()
+    df['signal'] = 0
+    df.loc[df['price'] > df['EMA'], 'signal'] = 1  # Buy signal
+    df.loc[df['price'] < df['EMA'], 'signal'] = -1  # Sell signal
+    time.sleep(1)
+    print("signal",df["signal"])
+   
+
+
+if all(points[i] <= points[i + 1] for i in range(len(points) - 1)):
+    print("buy")
+    print(all(points[i] <= points[i + 1] for i in range(len(points) - 1)))
+else:
+    print(all(points[i] <= points[i + 1] for i in range(len(points) - 1)))
+    print("no")
+
 
 
 previous=[get_price()]
 print("Previous-->",previous)
 
-if avg_points >= previous[0]:
-    df=pd.DataFrame(previous,columns=["price"])
-    df['EMA'] = df['price'].ewm(span=10, adjust=False).mean()
-    df['signal'] = 0
-    df.loc[df['price'] > df['EMA'], 'signal'] = 1  # Buy signal
-    df.loc[df['price'] < df['EMA'], 'signal'] = -1  # Sell signal
-else:
-    print("lower trading price might not reccomend to trade at this ")
 
 
 
